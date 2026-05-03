@@ -48,6 +48,10 @@ autonomous-agriculture-rover/
 5. Open dashboard:
    - `http://localhost:5000`
 
+## Runtime Variants
+- `app/app.py`: Laptop demo backend (local webcam + dashboard template). Use this for portfolio demos and local testing.
+- `app/rpi_app.py`: Raspberry Pi deployment backend (Picamera2, GPIO, relay, ESP32 UART). Kept for production rover records and on-device runs.
+
 ## Documentation
 - [Hardware Specifications](docs/HARDWARE_SPECIFICATIONS.md)
 - [Wiring Guide](docs/WIRING_GUIDE.md)
