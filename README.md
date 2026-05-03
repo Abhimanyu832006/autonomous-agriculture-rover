@@ -19,6 +19,12 @@ An autonomous 4WD rover for crop-row navigation and weed detection using ESP32 +
 ```text
 autonomous-agriculture-rover/
 ├── README.md
+├── assets/
+│   ├── poster/
+│   ├── ppt/
+│   ├── images/
+│   ├── video/
+│   └── Weed_detection_dataset/
 ├── docs/
 │   ├── HARDWARE_SPECIFICATIONS.md
 │   ├── WIRING_GUIDE.md
@@ -51,6 +57,13 @@ autonomous-agriculture-rover/
 ## Runtime Variants
 - `app/app.py`: Laptop demo backend (local webcam + dashboard template). Use this for portfolio demos and local testing.
 - `app/rpi_app.py`: Raspberry Pi deployment backend (Picamera2, GPIO, relay, ESP32 UART). Kept for production rover records and on-device runs.
+
+## Media And Dataset
+- `assets/poster/`: Project poster files.
+- `assets/ppt/`: Presentation slides.
+- `assets/images/`: Demo and documentation images.
+- `assets/video/`: Demo videos.
+- `assets/Weed_detection_dataset/`: Weed detection dataset used for training and validation.
 
 ## Documentation
 - [Hardware Specifications](docs/HARDWARE_SPECIFICATIONS.md)
