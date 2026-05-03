@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgriRover — Weed Detection Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg:       #0a0f0d;
+    --bg2:      #111a14;
+    --bg3:      #162019;
+    --border:   #1f3028;
+    --green:    #00e574;
+    --green-d:  #009e52;
+    --red:      #ff3b3b;
+    --red-d:    #b52222;
+    --amber:    #ffb300;
+    --blue:     #38b2ff;
+    --text:     #d4e8dc;
+    --muted:    #5a7a63;
+    --card-r:   10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,116,0.015) 2px, rgba(0,229,116,0.015) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: var(--green);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .logo-icon svg { width: 18px; height: 18px; }
+
+  .logo-text {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #fff;
+  }
+
+  .logo-text span { color: var(--green); }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.7); }
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    padding: 16px 20px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  .col-left { display: flex; flex-direction: column; gap: 16px; }
+  .col-right { display: flex; flex-direction: column; gap: 16px; }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    overflow: hidden;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .card-body { padding: 16px; }
+
+  /* ── Camera Feed ── */
+  .feed-container {
+    position: relative;
+    background: #000;
+    border-radius: 0 0 var(--card-r) var(--card-r);
+    overflow: hidden;
+    aspect-ratio: 4/3;
+    max-height: 420px;
+  }
+
+  #camera-feed {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .feed-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .feed-overlay svg { width: 100%; height: 100%; }
+
+  .feed-hud {
+    position: absolute;
+    top: 10px; left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .hud-chip {
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: var(--green);
+  }
+
+  .feed-disconnected {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.85);
+    color: var(--muted);
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .feed-disconnected svg { width: 40px; height: 40px; opacity: 0.4; }
+
+  /* ── Stats Row ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .stat-value.green { color: var(--green); }
+  .stat-value.red   { color: var(--red); }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.blue  { color: var(--blue); }
+
+  .stat-sub {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── Rover Status ── */
+  .rover-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .rover-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+
+  .rover-item-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .rover-item-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .pill-green  { background: rgba(0,229,116,0.12); color: var(--green); border: 1px solid rgba(0,229,116,0.25); }
+  .pill-amber  { background: rgba(255,179,0,0.12);  color: var(--amber); border: 1px solid rgba(255,179,0,0.25); }
+  .pill-blue   { background: rgba(56,178,255,0.12); color: var(--blue); border: 1px solid rgba(56,178,255,0.25); }
+
+  /* ── Detection Log ── */
+  .log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+
+  .log-table thead {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .log-table th {
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .log-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .class-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 10px;
+  }
+
+  .badge-weed  { background: rgba(255,59,59,0.15); color: var(--red); }
+  .badge-crop  { background: rgba(0,229,116,0.15); color: var(--green); }
+
+  .conf-bar-wrap {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .conf-bar {
+    height: 100%;
+    transition: width 0.2s ease;
+  }
+
+  /* ── Fire Log ── */
+  .fire-entry {
+    display: flex;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+
+  .fire-entry:last-child { border-bottom: none; }
+
+  .fe-time {
+    color: var(--muted);
+    min-width: 50px;
+  }
+
+  .fe-label {
+    color: var(--red);
+    font-weight: 600;
+  }
+
+  /* ── Event Log ── */
+  .event-item {
+    display: flex;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .event-item:last-child { border-bottom: none; }
+
+  .event-time {
+    color: var(--muted);
+    min-width: 50px;
+  }
+
+  .event-msg {
+    flex: 1;
+    word-break: break-word;
+  }
+
+  /* ── Buttons ── */
+  button {
+    background: var(--green);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease;
+  }
+
+  button:hover { background: var(--green-d); transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  button:disabled { background: var(--muted); cursor: not-allowed; opacity: 0.6; }
+
+  .btn-red {
+    background: var(--red);
+    color: #fff;
+  }
+
+  .btn-red:hover { background: var(--red-d); }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+    z-index: 10000;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Laser LED ── */
+  #laser-led {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+    margin-right: 6px;
+    transition: background 0.1s;
+  }
+
+  #laser-led.on {
+    background: var(--red);
+    box-shadow: 0 0 8px rgba(255,59,59,0.6);
+  }
+
+  /* ── Settings Button ── */
+  .settings-btn {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--text);
+  }
+
+  .settings-btn:hover { background: var(--border); }
+
+  .modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 10001;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal.show {
+    display: flex;
+  }
+
+  .modal-content {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 300px;
+  }
+
+  .modal-content h2 {
+    margin-bottom: 16px;
+    font-size: 16px;
+  }
+
+  .modal-content input {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 12px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+  }
+
+  .modal-content button {
+    width: 100%;
+  }
+
+  @media (max-width: 1200px) {
+    .grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <path d="M9 11l3 3L22 4"/>
+      </svg>
+    </div>
+    <span class="logo-text">Agri<span>Rover</span></span>
+  </div>
+  <div class="header-meta">
+    <span id="hdr-time">--:--:--</span>
+    <span class="live-badge">
+      <div class="live-dot"></div>
+      <span id="hdr-conn">⬤ Disconnected</span>
+    </span>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="col-left">
+    <!-- Camera Feed -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Live Camera Feed</span>
+      </div>
+      <div class="feed-container">
+        <img id="camera-feed" src="" alt="Camera feed">
+        <div class="feed-hud">
+          <div class="hud-chip" id="fps-chip">-- FPS</div>
+          <div class="hud-chip" id="hud-inference">inf: -- ms</div>
+        </div>
+        <div id="feed-err" class="feed-disconnected" style="display: none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 6h22M1 12h22M1 18h22"/>
+          </svg>
+          <span>No signal</span>
+          <button onclick="retryFeed()" style="padding: 6px 12px; font-size: 11px;">Retry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <span class="stat-label">Weeds Detected</span>
+        <span class="stat-value green" id="s-weed">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Crops Detected</span>
+        <span class="stat-value green" id="s-crop">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Laser Fires</span>
+        <span class="stat-value red" id="s-laser">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">FPS</span>
+        <span class="stat-value blue" id="s-fps">--</span>
+      </div>
+    </div>
+
+    <!-- Detection Log -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Detection Log</span>
+      </div>
+      <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Class</th>
+              <th>Confidence</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody">
+            <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px">No detections yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <!-- Rover Status -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Rover Status</span>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom: 12px;">
+          <span class="status-pill" id="rover-state-pill">● IDLE</span>
+        </div>
+        <div class="rover-grid">
+          <div class="rover-item">
+            <div class="rover-item-label">Speed</div>
+            <div class="rover-item-value" id="r-speed">-- m/s</div>
+          </div>
+          <div class="rover-item">
+            <div class="rover-item-label">Obstacle</div>
+            <div class="rover-item-value" id="r-obstacle">-- cm</div>
+          </div>
+          <div class="rover-item">
+            <div class="rover-item-label">Line Status</div>
+            <div class="rover-item-value" id="r-line">UNKNOWN</div>
+          </div>
+          <div class="rover-item">
+            <div class="rover-item-label">Battery</div>
+            <div class="rover-item-value" id="r-batt">-- V</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Laser Control -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Laser Control</span>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 8px;">Status</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px;">
+            <span id="laser-led" class=""></span>
+            <span id="laser-status-txt" style="color: var(--muted);">OFF</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="btn-red" id="btn-fire" onclick="fireLaser()">⚡ FIRE LASER</button>
+          <button onclick="toggleAuto(true)" id="btn-auto-on">🤖 Auto: OFF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fire Log -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Fire Log</span>
+      </div>
+      <div class="card-body" id="fire-log" style="max-height: 200px; overflow-y: auto;">
+        <div class="fire-entry"><span class="fe-time">--:--:--</span><span class="fe-label">No fire yet</span></div>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Event Log</span>
+      </div>
+      <div class="card-body" id="event-log" style="max-height: 250px; overflow-y: auto;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div class="settings-btn" onclick="toggleSettings()">⚙️</div>
+
+<div id="settings-modal" class="modal">
+  <div class="modal-content">
+    <h2>Server Settings</h2>
+    <label style="display: block; margin-bottom: 8px; font-size: 12px; color: var(--muted); text-transform: uppercase;">Backend URL</label>
+    <input id="server-url" type="text" placeholder="http://localhost:5000">
+    <button onclick="saveSettings()">Save</button>
+    <button onclick="toggleSettings()" style="background: var(--muted); margin-top: 8px;">Cancel</button>
+  </div>
+</div>
+
+<script>
+// ──────── Config ────────
+let PI = localStorage.getItem('agriRover_serverUrl') || 'http://localhost:5000';
+
+function toggleSettings() {
+  document.getElementById('settings-modal').classList.toggle('show');
+  if (document.getElementById('settings-modal').classList.contains('show')) {
+    document.getElementById('server-url').value = PI;
+  }
+}
+
+function saveSettings() {
+  const url = document.getElementById('server-url').value.trim();
+  if (url) {
+    PI = url;
+    localStorage.setItem('agriRover_serverUrl', url);
+    toggleSettings();
+    showToast('Server URL saved');
+    retryFeed();
+  }
+}
+
+// ──────── Grid State (mock) ────────
+const GRID_W = 10, GRID_H = 10;
+let gridState = [];
+let roverPos = { x: 5, y: 5 };
+
+function initGrid() {
+  gridState = Array(GRID_H).fill().map(() => Array(GRID_W).fill('empty'));
+}
+
+// ──────── Confidence Chart ────────
+const confCtx = document.getElementById('conf-chart')?.getContext('2d');
+const confData = { labels: [], datasets: [
+  { label: 'Weed Confidence', data: [], borderColor: '#ff3b3b', backgroundColor: 'rgba(255,59,59,0.1)', tension: 0.3 },
+  { label: 'Crop Confidence', data: [], borderColor: '#00e574', backgroundColor: 'rgba(0,229,116,0.1)', tension: 0.3 }
+]};
+
+const confChart = confCtx ? new Chart(confCtx, {
+  type: 'line',
+  data: confData,
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 1,
+        ticks: {
+          color: '#5a7a63',
+          font: { family: "'JetBrains Mono', monospace", size: 10 },
+          stepSize: 0.25,
+        },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+      }
+    },
+    plugins: {
+      legend: {
+        labels: {
+          color: '#5a7a63',
+          font: { size: 11 },
+          boxWidth: 12,
+          padding: 12,
+        }
+      }
+    }
+  }
+}) : null;
+
+function pushChart(weedConf, cropConf) {
+  if (!confChart) return;
+  const t = new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  confData.labels.push(t);
+  confData.datasets[0].data.push(weedConf);
+  confData.datasets[1].data.push(cropConf);
+  if (confData.labels.length > 60) {
+    confData.labels.shift();
+    confData.datasets[0].data.shift();
+    confData.datasets[1].data.shift();
+  }
+  confChart.update();
+}
+
+// ──────── Clock ────────
+setInterval(() => {
+  document.getElementById('hdr-time').textContent =
+    new Date().toLocaleTimeString('en', { hour12: false });
+}, 1000);
+
+// ──────── Feed ────────
+function showFeedError() {
+  document.getElementById('feed-err').style.display = 'flex';
+}
+
+function feedLoaded() {
+  document.getElementById('feed-err').style.display = 'none';
+}
+
+function retryFeed() {
+  const img = document.getElementById('camera-feed');
+  img.src = PI + '/video_feed?' + Date.now();
+}
+
+// ──────── Fetch helpers ────────
+async function apiFetch(path) {
+  try {
+    const r = await fetch(PI + path, { signal: AbortSignal.timeout(2000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch(e) {
+    console.error('API Error:', e);
+    return null;
+  }
+}
+
+// ──────── /stats ────────
+async function fetchStats() {
+  const d = await apiFetch('/stats');
+  if (!d) return;
+
+  document.getElementById('hdr-conn').textContent = '⬤ Connected';
+  document.getElementById('hdr-conn').style.color = 'var(--green)';
+
+  document.getElementById('s-weed').textContent  = d.weed_count  ?? 0;
+  document.getElementById('s-crop').textContent  = d.crop_count  ?? 0;
+  document.getElementById('s-laser').textContent = d.laser_count ?? 0;
+  document.getElementById('s-fps').textContent   = d.fps != null ? d.fps.toFixed(1) : '--';
+
+  const fps = d.fps != null ? d.fps.toFixed(1) + ' FPS' : '-- FPS';
+  document.getElementById('fps-chip').textContent = fps;
+
+  const inf = d.inference_ms != null ? d.inference_ms.toFixed(0) + ' ms' : '-- ms';
+  document.getElementById('hud-inference').textContent = 'inf: ' + (d.inference_ms != null ? d.inference_ms.toFixed(0) + 'ms' : '--');
+
+  // Update chart
+  if (d.last_weed_conf != null || d.last_crop_conf != null) {
+    pushChart(d.last_weed_conf ?? null, d.last_crop_conf ?? null);
+  }
+}
+
+// ──────── /rover_status ────────
+async function fetchRoverStatus() {
+  const d = await apiFetch('/rover_status');
+  if (!d) return;
+
+  const pilldiv = document.getElementById('rover-state-pill');
+  const state = (d.state || 'unknown').toUpperCase();
+  pilldiv.textContent = '● ' + state;
+  pilldiv.className = 'status-pill ' + (
+    state === 'MOVING' ? 'pill-green' :
+    state === 'STOPPED' ? 'pill-amber' :
+    state.includes('BYPASS') ? 'pill-blue' : 'pill-amber'
+  );
+
+  const spd = d.speed != null ? d.speed.toFixed(2) + ' m/s' : '-- m/s';
+  document.getElementById('r-speed').textContent = spd;
+
+  const obs = d.obstacle_distance != null ? d.obstacle_distance.toFixed(0) + ' cm' : '-- cm';
+  const obsEl = document.getElementById('r-obstacle');
+  obsEl.textContent = obs;
+  obsEl.style.color = (d.obstacle_distance != null && d.obstacle_distance < 20) ? 'var(--red)' : 'var(--amber)';
+
+  const lineEl = document.getElementById('r-line');
+  const lineStatus = d.line_status || 'UNKNOWN';
+  lineEl.textContent = lineStatus;
+  lineEl.style.color = lineStatus === 'ON_TRACK' ? 'var(--green)' : 'var(--amber)';
+
+  const batt = d.battery_voltage != null ? d.battery_voltage.toFixed(2) + ' V' : '-- V';
+  const battEl = document.getElementById('r-batt');
+  battEl.textContent = batt;
+  battEl.style.color = (d.battery_voltage != null && d.battery_voltage < 7.0) ? 'var(--red)' : 'var(--green)';
+}
+
+// ──────── /detection_log ────────
+let lastLogLen = 0;
+async function fetchDetectionLog() {
+  const d = await apiFetch('/detection_log');
+  if (!d || !d.detections) return;
+  const dets = d.detections;
+
+  const tbody = document.getElementById('log-tbody');
+  if (dets.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px">No detections yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = dets.map(det => {
+    const conf = (det.confidence * 100).toFixed(1);
+    const barColor = det.class === 'weed' ? 'var(--red)' : 'var(--green)';
+    const badge = det.class === 'weed'
+      ? '<span class="class-badge badge-weed">WEED</span>'
+      : '<span class="class-badge badge-crop">CROP</span>';
+    const action = det.action === 'laser_fired'
+      ? '<span style="color:var(--red);font-weight:600">⚡ Laser fired</span>'
+      : '<span style="color:var(--muted)">Skipped</span>';
+    return `<tr>
+      <td>${det.timestamp || '--'}</td>
+      <td>${badge}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="conf-bar-wrap"><div class="conf-bar" style="width:${conf}%;background:${barColor}"></div></div>
+          <span>${conf}%</span>
+        </div>
+      </td>
+      <td>${action}</td>
+    </tr>`;
+  }).join('');
+
+  lastLogLen = dets.length;
+}
+
+// ──────── Laser ────────
+async function fireLaser() {
+  const btn = document.getElementById('btn-fire');
+  btn.disabled = true;
+  btn.textContent = 'Firing…';
+
+  try {
+    const r = await fetch(PI + '/laser/fire', { method: 'POST', signal: AbortSignal.timeout(2000) });
+    const d = await r.json();
+    const ts = new Date().toLocaleTimeString('en', { hour12: false });
+    addFireEntry(ts, 'Manual fire');
+    setLaserOn(true);
+    setTimeout(() => setLaserOn(false), 800);
+    logEvent('Manual laser fire', 'red');
+  } catch(e) {
+    showToast('Laser fire failed: ' + e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '⚡ FIRE LASER';
+}
+
+let autoMode = false;
+async function toggleAuto(on) {
+  autoMode = !autoMode;
+  const btn = document.getElementById('btn-auto-on');
+  btn.textContent = '🤖 Auto: ' + (autoMode ? 'ON' : 'OFF');
+  
+  try {
+    await fetch(PI + '/laser/auto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: autoMode }),
+      signal: AbortSignal.timeout(2000)
+    });
+    logEvent('Auto-fire ' + (autoMode ? 'ENABLED' : 'DISABLED'), autoMode ? 'green' : 'amber');
+  } catch(e) {
+    showToast('Auto toggle failed: ' + e.message);
+  }
+}
+
+function setLaserOn(on) {
+  const led = document.getElementById('laser-led');
+  const txt = document.getElementById('laser-status-txt');
+  led.classList.toggle('on', on);
+  txt.textContent = on ? 'ON' : 'OFF';
+  txt.style.color  = on ? 'var(--red)' : 'var(--muted)';
+}
+
+function addFireEntry(ts, label) {
+  const log = document.getElementById('fire-log');
+  const entry = document.createElement('div');
+  entry.className = 'fire-entry';
+  entry.innerHTML = `<span class="fe-time">${ts}</span><span class="fe-label">⚡ ${label}</span>`;
+  if (log.children[0] && log.children[0].textContent.includes('No fire')) log.innerHTML = '';
+  log.prepend(entry);
+  if (log.children.length > 20) log.removeChild(log.lastChild);
+}
+
+// ──────── Events ────────
+const eventColors = { green: 'var(--green)', red: 'var(--red)', blue: 'var(--blue)', amber: 'var(--amber)' };
+function logEvent(msg, color = 'amber') {
+  const log = document.getElementById('event-log');
+  const ts = new Date().toLocaleTimeString('en', { hour12: false });
+  const item = document.createElement('div');
+  item.className = 'event-item';
+  item.innerHTML = `<span class="event-time">${ts}</span><span class="event-msg" style="color:${eventColors[color] || 'var(--text)'}">${msg}</span>`;
+  log.prepend(item);
+  if (log.children.length > 30) log.removeChild(log.lastChild);
+}
+
+// ──────── Toast ────────
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ──────── Poll loop ────────
+initGrid();
+logEvent('Dashboard started', 'green');
+retryFeed();
+
+async function poll() {
+  await Promise.allSettled([
+    fetchStats(),
+    fetchRoverStatus(),
+    fetchDetectionLog(),
+  ]);
+}
+
+poll(); // immediate
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
